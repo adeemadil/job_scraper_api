@@ -1,0 +1,23 @@
+# Ignore virtual environments
+venv/
+.env
+
+# Byte-compiled / cached files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore SQLite database file
+jobs.db
+
+# Ignore logs
+logs/
+*.log
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore Vercel deployment files
+.vercel/
