@@ -1,0 +1,25 @@
+# Web framework (if using FastAPI)
+fastapi
+
+# ASGI Server (for FastAPI)
+uvicorn
+
+# Web framework alternative (if using Flask)
+flask
+
+# Web scraping dependencies (if applicable)
+requests
+beautifulsoup4
+
+# Linting and formatting
+flake8
+black
+
+# Optional: Database dependencies (choose based on your DB)
+sqlalchemy
+sqllite3
+psycopg2-binary  # PostgreSQL
+pymongo  # MongoDB (if using NoSQL)
+
+# Optional: Environment variable management
+python-dotenv
