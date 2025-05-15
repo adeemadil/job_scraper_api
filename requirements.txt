@@ -17,7 +17,6 @@ black
 
 # Optional: Database dependencies (choose based on your DB)
 sqlalchemy
-sqllite3
 psycopg2-binary  # PostgreSQL
 pymongo  # MongoDB (if using NoSQL)
 
