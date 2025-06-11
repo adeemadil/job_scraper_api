@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 def scrape_jobs(query: str):
     """
     Scrapes jobs from all available sources.
-    Returns a list of dicts: { 'title': ..., 'company': ..., 'link': ... }
+    Returns a list of dicts: { 'title': ..., 'company': ..., 'link': ..., 'description': ... }
     """
     remote_ok_jobs = []
     we_work_remotely_jobs = []
