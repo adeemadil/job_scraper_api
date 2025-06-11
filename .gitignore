@@ -21,3 +21,8 @@ Thumbs.db
 
 # Ignore Vercel deployment files
 .vercel/
+# Next.js build output
+frontend/.next/
+
+# Dependencies
+frontend/node_modules/
