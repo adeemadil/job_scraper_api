@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { FiSearch, FiFilter } from 'react-icons/fi';
 
@@ -7,6 +7,13 @@ interface Job {
   company: string;
   link: string;
   source: string;
+  description?: string;
+}
+
+interface RecentSearch {
+  query: string;
+  jobs: Job[];
+  timestamp: number; // ms since epoch
 }
 
 const NAV_LINKS = [
@@ -21,23 +28,62 @@ export default function Home() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
   // Pagination (static for now)
   const [page] = useState(1);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Load recent searches from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem('recentSearches');
+    if (stored) {
+      setRecentSearches(JSON.parse(stored));
+    }
+  }, []);
+
+  // Save recent searches to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('recentSearches', JSON.stringify(recentSearches));
+  }, [recentSearches]);
+
+  const searchJobs = async (searchQuery: string) => {
     setLoading(true);
     setError('');
+
+    const found = recentSearches.find((s) => s.query === searchQuery);
+    const now = Date.now();
+    if (found && now - found.timestamp < 5 * 60 * 1000) { // 5 minutes
+      setJobs(found.jobs);
+      setLoading(false);
+      return;
+    }
+
     try {
-      const response = await fetch(`/api/jobs?q=${encodeURIComponent(query)}`);
+      const response = await fetch(`/api/jobs?q=${encodeURIComponent(searchQuery)}`);
       const data = await response.json();
       setJobs(data.jobs);
+      setRecentSearches((prev) => {
+        const filtered = prev.filter((s) => s.query !== searchQuery);
+        return [
+          { query: searchQuery, jobs: data.jobs, timestamp: now },
+          ...filtered
+        ].slice(0, 15); // Limit to 15 recent searches
+      });
     } catch (err) {
       setError('Failed to fetch jobs. Please try again.');
       console.error(err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    searchJobs(query);
+  };
+
+  const handleRecentClick = (recent: RecentSearch) => {
+    setQuery(recent.query);
+    searchJobs(recent.query);
   };
 
   return (
@@ -91,6 +137,23 @@ export default function Home() {
             <span className="text-gray-700 font-medium">Filters</span>
           </button>
         </form>
+        {/* Recent Searches */}
+        {recentSearches.length > 0 && (
+          <div className="container mx-auto px-4 mt-4">
+            <div className="text-gray-500 text-sm mb-2">Recent Searches:</div>
+            <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+              {recentSearches.map((s) => (
+                <button
+                  key={s.query}
+                  onClick={() => handleRecentClick(s)}
+                  className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm hover:bg-blue-200 transition whitespace-nowrap"
+                >
+                  {s.query}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Error */}
@@ -119,8 +182,9 @@ export default function Home() {
                     </span>
                   </div>
                   <div className="text-gray-600 font-medium mb-2">{job.company}</div>
-                  {/* No description available from API, so use a placeholder or omit */}
-                  {/* <div className="text-gray-500 text-sm mb-4">Job description goes here...</div> */}
+                  {job.description && (
+                    <div className="text-gray-500 text-sm mb-4 line-clamp-2">{job.description}</div>
+                  )}
                 </div>
                 <a
                   href={job.link}

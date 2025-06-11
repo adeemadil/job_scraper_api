@@ -14,6 +14,7 @@ def main():
     for job in jobs:
         print(f"Title: {job['title']}")
         print(f"Company: {job['company']}")
+        print(f"Description: {job['description']}")
         print(f"Link: {job['link']}")
         print("-" * 80)
 
