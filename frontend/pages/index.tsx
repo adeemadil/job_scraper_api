@@ -55,7 +55,20 @@ const HomePage: React.FC = () => {
   const currentJobs = jobResults.slice(indexOfFirstJob, indexOfLastJob);
   const totalPages = Math.ceil(jobResults.length / jobsPerPage);
 
-  // Change page
+  const displayRecentSearches = React.useMemo(() => {
+    const uniqueQueries = new Map<string, RecentSearch>();
+
+    recentSearches.forEach((search) => {
+      const existingSearch = uniqueQueries.get(search.query);
+      if (!existingSearch || search.timestamp > existingSearch.timestamp) {
+        uniqueQueries.set(search.query, search);
+      }
+    });
+
+    const sortedSearches = Array.from(uniqueQueries.values()).sort((a, b) => b.timestamp - a.timestamp);
+    return sortedSearches;
+  }, [recentSearches]);
+
   const paginate = useCallback((pageNumber: number) => {
     setCurrentPage(pageNumber);
   }, []);
@@ -88,32 +101,40 @@ const HomePage: React.FC = () => {
     localStorage.setItem('darkMode', JSON.stringify(isDarkMode));
   }, [isDarkMode]);
 
-  const handleSearch = useCallback(async (query: string) => {
+  const handleSearch = useCallback(async (
+    query: string,
+    loc?: string,
+    jt?: string,
+    el?: string
+  ) => {
     setIsLoading(true);
     setFetchError('');
-    setJobResults([]); // Clear previous jobs to show skeletons immediately
+    setJobResults([]);
 
-    // Construct query parameters
+    const currentLoc = loc !== undefined ? loc : locationFilter;
+    const currentJt = jt !== undefined ? jt : jobTypeFilter;
+    const currentEl = el !== undefined ? el : experienceLevelFilter;
+
     const params = new URLSearchParams();
     params.append('q', query);
-    if (locationFilter) params.append('location', locationFilter);
-    if (jobTypeFilter) params.append('job_type', jobTypeFilter);
-    if (experienceLevelFilter) params.append('experience_level', experienceLevelFilter);
+    if (currentLoc) params.append('location', currentLoc);
+    if (currentJt) params.append('job_type', currentJt);
+    if (currentEl) params.append('experience_level', currentEl);
 
     const queryString = params.toString();
 
     const foundRecentSearch = recentSearches.find(
       (s) =>
         s.query === query &&
-        s.location === locationFilter &&
-        s.jobType === jobTypeFilter &&
-        s.experienceLevel === experienceLevelFilter
+        s.location === currentLoc &&
+        s.jobType === currentJt &&
+        s.experienceLevel === currentEl
     );
     const now = Date.now();
 
-    if (foundRecentSearch && now - foundRecentSearch.timestamp < 5 * 60 * 1000) { // 5 minutes
+    if (foundRecentSearch && now - foundRecentSearch.timestamp < 5 * 60 * 1000) {
       setJobResults(foundRecentSearch.jobs);
-      setCurrentPage(1); // Reset to first page on new search
+      setCurrentPage(1);
       setIsLoading(false);
       return;
     }
@@ -122,24 +143,24 @@ const HomePage: React.FC = () => {
       const response = await fetch(`/api/jobs?${queryString}`);
       const data = await response.json();
       setJobResults(data.jobs);
-      setCurrentPage(1); // Reset to first page on new search
+      setCurrentPage(1);
       setRecentSearches((prevSearches) => {
         const newSearchEntry = {
           query,
           jobs: data.jobs,
           timestamp: now,
-          location: locationFilter,
-          jobType: jobTypeFilter,
-          experienceLevel: experienceLevelFilter,
+          location: currentLoc,
+          jobType: currentJt,
+          experienceLevel: currentEl,
         };
         const filteredSearches = prevSearches.filter(
           (s) =>
             !(s.query === query &&
-              s.location === locationFilter &&
-              s.jobType === jobTypeFilter &&
-              s.experienceLevel === experienceLevelFilter)
+              s.location === currentLoc &&
+              s.jobType === currentJt &&
+              s.experienceLevel === currentEl)
         );
-        return [newSearchEntry, ...filteredSearches].slice(0, 15); // Limit to 15 recent searches
+        return [newSearchEntry, ...filteredSearches].slice(0, 15);
       });
     } catch (err) {
       setFetchError('Failed to fetch jobs. Please try again.');
@@ -147,20 +168,25 @@ const HomePage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [locationFilter, jobTypeFilter, experienceLevelFilter, recentSearches]);
+  }, [recentSearches, locationFilter, jobTypeFilter, experienceLevelFilter]);
 
   const handleFormSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
-    handleSearch(searchQuery);
-  }, [searchQuery, handleSearch]);
+    handleSearch(searchQuery, locationFilter, jobTypeFilter, experienceLevelFilter);
+  }, [searchQuery, locationFilter, jobTypeFilter, experienceLevelFilter, handleSearch]);
 
   const handleRecentSearchClick = useCallback((recent: RecentSearch) => {
     setSearchQuery(recent.query);
     setLocationFilter(recent.location || '');
     setJobTypeFilter(recent.jobType || '');
     setExperienceLevelFilter(recent.experienceLevel || '');
-    handleSearch(recent.query);
+    handleSearch(recent.query, recent.location, recent.jobType, recent.experienceLevel);
   }, [handleSearch]);
+
+  const handleApplyFilters = useCallback(() => {
+    handleSearch(searchQuery, locationFilter, jobTypeFilter, experienceLevelFilter);
+    setShowFilters(false);
+  }, [searchQuery, locationFilter, jobTypeFilter, experienceLevelFilter, handleSearch]);
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
@@ -258,16 +284,23 @@ const HomePage: React.FC = () => {
                     {EXPERIENCE_LEVELS.map(level => <option key={level} value={level}>{level}</option>)}
                   </select>
                 </div>
+                <button
+                  type="button"
+                  onClick={handleApplyFilters}
+                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700 transition"
+                >
+                  Apply Filters
+                </button>
               </div>
             )}
           </div>
         </form>
         {/* Recent Searches */}
-        {recentSearches.length > 0 && (
+        {displayRecentSearches.length > 0 && (
           <div className="container mx-auto px-4 mt-4">
             <div className="text-gray-500 dark:text-gray-400 text-sm mb-2">Recent Searches:</div>
             <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1 safari-scroll-hide">
-              {recentSearches.map((s) => (
+              {displayRecentSearches.map((s) => (
                 <button
                   key={s.query}
                   onClick={() => handleRecentSearchClick(s)}
