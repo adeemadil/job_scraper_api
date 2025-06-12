@@ -1,13 +1,8 @@
 import React from 'react';
+import { Job } from '../types';
 
 interface JobCardProps {
-  job: {
-    title: string;
-    company: string;
-    link: string;
-    source: string;
-    description?: string;
-  };
+  job: Job;
 }
 
 const JobCard: React.FC<JobCardProps> = ({ job }) => {
