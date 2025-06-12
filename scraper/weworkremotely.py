@@ -1,12 +1,23 @@
 import requests
 from bs4 import BeautifulSoup
 
-def scrape_weworkremotely(query: str):
+def scrape_weworkremotely(query: str, location: str = None, job_type: str = None, experience_level: str = None):
     """
     Scrapes We Work Remotely for jobs matching the query.
     Returns a list of dicts: { 'title': ..., 'company': ..., 'link': ..., 'source': 'We Work Remotely', 'description': ... }
     """
-    url = f"https://weworkremotely.com/remote-jobs/search?term={query.replace(' ', '+')}"
+    # Construct the base URL
+    search_term = query.replace(' ', '+')
+
+    # We Work Remotely often treats job type/experience/location as keywords
+    if location:
+        search_term = f"{search_term}+{location.replace(' ', '+')}"
+    if job_type:
+        search_term = f"{search_term}+{job_type.replace(' ', '+')}"
+    if experience_level:
+        search_term = f"{search_term}+{experience_level.replace(' ', '+')}"
+
+    url = f"https://weworkremotely.com/remote-jobs/search?term={search_term}"
     headers = {
         "User-Agent": "Mozilla/5.0"
     }
