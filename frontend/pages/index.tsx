@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Head from 'next/head';
 import { FiSearch, FiFilter, FiSun, FiMoon } from 'react-icons/fi';
 import JobSkeleton from '../components/JobSkeleton';
+import JobCard from '../components/JobCard';
+import Pagination from '../components/Pagination';
 
 interface Job {
   title: string;
@@ -14,7 +16,7 @@ interface Job {
 interface RecentSearch {
   query: string;
   jobs: Job[];
-  timestamp: number; // ms since epoch
+  timestamp: number;
   location?: string;
   jobType?: string;
   experienceLevel?: string;
@@ -31,16 +33,16 @@ const JOB_TYPES = ['Full-time', 'Part-time', 'Contract', 'Freelance'];
 const EXPERIENCE_LEVELS = ['Entry-level', 'Mid-level', 'Senior-level', 'Lead'];
 // For simplicity, locations are not pre-defined, as they can be too varied.
 
-export default function Home() {
-  const [query, setQuery] = useState('');
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+const HomePage: React.FC = () => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [jobResults, setJobResults] = useState<Job[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [fetchError, setFetchError] = useState('');
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
-  const [darkMode, setDarkMode] = useState(false);
-  const [location, setLocation] = useState('');
-  const [jobType, setJobType] = useState('');
-  const [experienceLevel, setExperienceLevel] = useState('');
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [locationFilter, setLocationFilter] = useState('');
+  const [jobTypeFilter, setJobTypeFilter] = useState('');
+  const [experienceLevelFilter, setExperienceLevelFilter] = useState('');
   const [showFilters, setShowFilters] = useState(false);
 
   // Pagination states
@@ -50,22 +52,24 @@ export default function Home() {
   // Calculate jobs to display for the current page
   const indexOfLastJob = currentPage * jobsPerPage;
   const indexOfFirstJob = indexOfLastJob - jobsPerPage;
-  const currentJobs = jobs.slice(indexOfFirstJob, indexOfLastJob);
-  const totalPages = Math.ceil(jobs.length / jobsPerPage);
+  const currentJobs = jobResults.slice(indexOfFirstJob, indexOfLastJob);
+  const totalPages = Math.ceil(jobResults.length / jobsPerPage);
 
   // Change page
-  const paginate = (pageNumber: number) => setCurrentPage(pageNumber);
+  const paginate = useCallback((pageNumber: number) => {
+    setCurrentPage(pageNumber);
+  }, []);
 
   // Load recent searches and dark mode preference from localStorage on mount
   useEffect(() => {
-    const stored = localStorage.getItem('recentSearches');
-    if (stored) {
-      setRecentSearches(JSON.parse(stored));
+    const storedSearches = localStorage.getItem('recentSearches');
+    if (storedSearches) {
+      setRecentSearches(JSON.parse(storedSearches));
     }
 
     const storedDarkMode = localStorage.getItem('darkMode');
     if (storedDarkMode) {
-      setDarkMode(JSON.parse(storedDarkMode));
+      setIsDarkMode(JSON.parse(storedDarkMode));
     }
   }, []);
 
@@ -76,69 +80,87 @@ export default function Home() {
 
   // Apply dark mode to document element and save preference
   useEffect(() => {
-    if (darkMode) {
+    if (isDarkMode) {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
-    localStorage.setItem('darkMode', JSON.stringify(darkMode));
-  }, [darkMode]);
+    localStorage.setItem('darkMode', JSON.stringify(isDarkMode));
+  }, [isDarkMode]);
 
-  const searchJobs = async (searchQuery: string) => {
-    setLoading(true);
-    setError('');
-    setJobs([]); // Clear previous jobs to show skeletons immediately
+  const handleSearch = useCallback(async (query: string) => {
+    setIsLoading(true);
+    setFetchError('');
+    setJobResults([]); // Clear previous jobs to show skeletons immediately
 
     // Construct query parameters
     const params = new URLSearchParams();
-    params.append('q', searchQuery);
-    if (location) params.append('location', location);
-    if (jobType) params.append('job_type', jobType);
-    if (experienceLevel) params.append('experience_level', experienceLevel);
+    params.append('q', query);
+    if (locationFilter) params.append('location', locationFilter);
+    if (jobTypeFilter) params.append('job_type', jobTypeFilter);
+    if (experienceLevelFilter) params.append('experience_level', experienceLevelFilter);
 
     const queryString = params.toString();
 
-    const found = recentSearches.find((s) => s.query === searchQuery && s.location === location && s.jobType === jobType && s.experienceLevel === experienceLevel);
+    const foundRecentSearch = recentSearches.find(
+      (s) =>
+        s.query === query &&
+        s.location === locationFilter &&
+        s.jobType === jobTypeFilter &&
+        s.experienceLevel === experienceLevelFilter
+    );
     const now = Date.now();
-    if (found && now - found.timestamp < 5 * 60 * 1000) { // 5 minutes
-      setJobs(found.jobs);
+
+    if (foundRecentSearch && now - foundRecentSearch.timestamp < 5 * 60 * 1000) { // 5 minutes
+      setJobResults(foundRecentSearch.jobs);
       setCurrentPage(1); // Reset to first page on new search
-      setLoading(false);
+      setIsLoading(false);
       return;
     }
 
     try {
       const response = await fetch(`/api/jobs?${queryString}`);
       const data = await response.json();
-      setJobs(data.jobs);
+      setJobResults(data.jobs);
       setCurrentPage(1); // Reset to first page on new search
-      setRecentSearches((prev) => {
-        const newSearch = { query: searchQuery, jobs: data.jobs, timestamp: now, location, jobType, experienceLevel };
-        const filtered = prev.filter((s) => 
-          !(s.query === searchQuery && s.location === location && s.jobType === jobType && s.experienceLevel === experienceLevel)
+      setRecentSearches((prevSearches) => {
+        const newSearchEntry = {
+          query,
+          jobs: data.jobs,
+          timestamp: now,
+          location: locationFilter,
+          jobType: jobTypeFilter,
+          experienceLevel: experienceLevelFilter,
+        };
+        const filteredSearches = prevSearches.filter(
+          (s) =>
+            !(s.query === query &&
+              s.location === locationFilter &&
+              s.jobType === jobTypeFilter &&
+              s.experienceLevel === experienceLevelFilter)
         );
-        return [newSearch, ...filtered].slice(0, 15); // Limit to 15 recent searches
+        return [newSearchEntry, ...filteredSearches].slice(0, 15); // Limit to 15 recent searches
       });
     } catch (err) {
-      setError('Failed to fetch jobs. Please try again.');
+      setFetchError('Failed to fetch jobs. Please try again.');
       console.error(err);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
-  };
+  }, [locationFilter, jobTypeFilter, experienceLevelFilter, recentSearches]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleFormSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
-    searchJobs(query);
-  };
+    handleSearch(searchQuery);
+  }, [searchQuery, handleSearch]);
 
-  const handleRecentClick = (recent: RecentSearch) => {
-    setQuery(recent.query);
-    setLocation(recent.location || '');
-    setJobType(recent.jobType || '');
-    setExperienceLevel(recent.experienceLevel || '');
-    searchJobs(recent.query);
-  };
+  const handleRecentSearchClick = useCallback((recent: RecentSearch) => {
+    setSearchQuery(recent.query);
+    setLocationFilter(recent.location || '');
+    setJobTypeFilter(recent.jobType || '');
+    setExperienceLevelFilter(recent.experienceLevel || '');
+    handleSearch(recent.query);
+  }, [handleSearch]);
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
@@ -160,41 +182,40 @@ export default function Home() {
             ))}
           </nav>
           <button
-            onClick={() => setDarkMode(!darkMode)}
+            onClick={() => setIsDarkMode(!isDarkMode)}
             className="p-2 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200"
             aria-label="Toggle dark mode"
           >
-            {darkMode ? <FiSun size={20} /> : <FiMoon size={20} />}
+            {isDarkMode ? <FiSun size={20} /> : <FiMoon size={20} />}
           </button>
         </div>
       </header>
 
       {/* Search Bar and Filters */}
       <section className="w-full bg-gray-50 dark:bg-gray-900 py-6 transition-colors duration-200">
-        <form onSubmit={handleSubmit} className="container mx-auto flex flex-col md:flex-row items-center gap-4 px-4">
+        <form onSubmit={handleFormSubmit} className="container mx-auto flex flex-col md:flex-row items-center gap-4 px-4">
           <div className="flex flex-1 items-center bg-white dark:bg-gray-800 rounded-lg shadow px-4 py-3 ring-blue-500/50 dark:ring-blue-400/50 focus-within:ring-2 focus-within:shadow-lg transition-all duration-200">
             <FiSearch className="text-gray-400 mr-2 text-xl" />
             <input
               type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search for jobs (e.g., Software Engineer, React)"
               className="flex-1 bg-transparent outline-none text-gray-700 dark:text-gray-300 text-base placeholder-gray-400 dark:placeholder-gray-500"
             />
           </div>
           <button
             type="submit"
-            disabled={loading}
+            disabled={isLoading}
             className="px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition disabled:opacity-50"
           >
-            {loading ? 'Searching...' : 'Search'}
+            {isLoading ? 'Searching...' : 'Search'}
           </button>
           <div className="relative">
             <button
               type="button"
               onClick={() => setShowFilters(!showFilters)}
               className="flex items-center gap-2 px-5 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200"
-              tabIndex={-1}
             >
               <FiFilter size={20} className="text-gray-500 dark:text-gray-400" />
               <span className="text-gray-700 dark:text-gray-300 font-medium">Filters</span>
@@ -207,8 +228,8 @@ export default function Home() {
                   <input
                     type="text"
                     id="location"
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
+                    value={locationFilter}
+                    onChange={(e) => setLocationFilter(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                     placeholder="e.g., New York"
                   />
@@ -217,8 +238,8 @@ export default function Home() {
                   <label htmlFor="jobType" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Job Type</label>
                   <select
                     id="jobType"
-                    value={jobType}
-                    onChange={(e) => setJobType(e.target.value)}
+                    value={jobTypeFilter}
+                    onChange={(e) => setJobTypeFilter(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                   >
                     <option value="">Any</option>
@@ -229,8 +250,8 @@ export default function Home() {
                   <label htmlFor="experienceLevel" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Experience Level</label>
                   <select
                     id="experienceLevel"
-                    value={experienceLevel}
-                    onChange={(e) => setExperienceLevel(e.target.value)}
+                    value={experienceLevelFilter}
+                    onChange={(e) => setExperienceLevelFilter(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                   >
                     <option value="">Any</option>
@@ -245,11 +266,11 @@ export default function Home() {
         {recentSearches.length > 0 && (
           <div className="container mx-auto px-4 mt-4">
             <div className="text-gray-500 dark:text-gray-400 text-sm mb-2">Recent Searches:</div>
-            <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1 safari-scroll-hide">
               {recentSearches.map((s) => (
                 <button
                   key={s.query}
-                  onClick={() => handleRecentClick(s)}
+                  onClick={() => handleRecentSearchClick(s)}
                   className="px-3 py-1 bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-200 rounded-full text-sm hover:bg-blue-200 dark:hover:bg-blue-700 transition-colors duration-200 whitespace-nowrap"
                 >
                   {s.query}
@@ -261,10 +282,10 @@ export default function Home() {
       </section>
 
       {/* Error */}
-      {error && (
+      {fetchError && (
         <div className="container mx-auto px-4 mb-4">
           <div className="p-4 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-200 rounded-lg text-center transition-colors duration-200">
-            {error}
+            {fetchError}
           </div>
         </div>
       )}
@@ -272,78 +293,37 @@ export default function Home() {
       {/* Job Cards Grid */}
       <main className="flex-1 container mx-auto px-4 py-8">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {loading && Array.from({ length: jobsPerPage }).map((_, i) => <JobSkeleton key={i} />)}
-          {jobs.length === 0 && !loading && (
-            <div className="col-span-full text-center text-gray-400 dark:text-gray-500 text-lg">No jobs found. Try searching above.</div>
+          {isLoading && Array.from({ length: jobsPerPage }).map((_, i) => <JobSkeleton key={i} />)}
+          {jobResults.length === 0 && !isLoading && (
+            <p className="col-span-full text-center text-gray-400 dark:text-gray-500 text-lg">No jobs found. Try searching above.</p>
           )}
           {Array.isArray(currentJobs) && currentJobs.map((job, index) => (
             typeof job.title === 'string' && typeof job.company === 'string' && typeof job.link === 'string' && typeof job.source === 'string' ? (
-              <div key={index} className="bg-white dark:bg-gray-800 rounded-xl shadow p-6 flex flex-col justify-between min-h-[220px] transition-colors duration-200">
-                <div className="flex flex-col flex-grow space-y-2">
-                  <div className="flex items-start justify-between min-h-[3em]">
-                    <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 leading-tight">{job.title}</h2>
-                    <span className="bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-200 text-xs font-semibold px-3 py-1 rounded-full transition-colors duration-200 flex-shrink-0 whitespace-nowrap ml-2">
-                      {job.source}
-                    </span>
-                  </div>
-                  <p className="text-gray-600 dark:text-gray-300 font-medium">{job.company}</p>
-                  <p className="text-gray-500 dark:text-gray-400 text-sm line-clamp-2 min-h-[2.5em]">
-                    {job.description}
-                  </p>
-                </div>
-                <a
-                  href={job.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-4 w-full inline-block text-center bg-blue-600 text-white font-semibold py-2 rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
-                >
-                  Apply
-                </a>
-              </div>
+              <JobCard key={index} job={job} />
             ) : null
           ))}
         </div>
 
         {/* Pagination */}
-        {jobs.length > 0 && (
-          <div className="flex justify-center mt-10">
-            <nav className="inline-flex items-center gap-2">
-              <button
-                onClick={() => paginate(currentPage - 1)}
-                disabled={currentPage === 1 || loading}
-                className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 transition-colors duration-200"
-              >
-                &lt;
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((number) => (
-                <button
-                  key={number}
-                  onClick={() => paginate(number)}
-                  className={`w-8 h-8 flex items-center justify-center rounded ${currentPage === number ? 'bg-blue-600 text-white font-bold' : 'hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400'} transition-colors duration-200`}
-                  disabled={loading}
-                >
-                  {number}
-                </button>
-              ))}
-              <button
-                onClick={() => paginate(currentPage + 1)}
-                disabled={currentPage === totalPages || loading}
-                className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 transition-colors duration-200"
-              >
-                &gt;
-              </button>
-            </nav>
-          </div>
+        {jobResults.length > 0 && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            paginate={paginate}
+            loading={isLoading}
+          />
         )}
       </main>
 
       {/* Footer */}
       <footer className="w-full bg-gray-100 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 mt-8 py-6 transition-colors duration-200">
         <div className="container mx-auto px-4 text-center text-gray-500 dark:text-gray-400 text-sm">
-          © 2023 Remote Job Search. All rights reserved.<br />
+          © {new Date().getFullYear()} Remote Job Search. All rights reserved.<br />
           <a href="#" className="underline hover:text-blue-600 dark:hover:text-blue-400">Privacy Policy</a> | <a href="#" className="underline hover:text-blue-600 dark:hover:text-blue-400">Terms of Service</a>
         </div>
       </footer>
     </div>
   );
-} 
+};
+
+export default HomePage; 
